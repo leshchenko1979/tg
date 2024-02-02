@@ -2,19 +2,18 @@ import asyncio
 import contextlib
 import datetime as dt
 from typing import AsyncIterable
-import sys
 
 import pyrogram
 from fsspec import AbstractFileSystem
 from icontract import ensure
 
-from .account import Account
+from .account import Account, AccountCollection
 from .chat_cache import ChatCache, ChatCacheItem
 
 MAX_ACC_WAITING_TIME = 1000  # max waiting time for an available account
 
 
-class Scanner:
+class Scanner(AccountCollection):
     """Выполняет запросы к телеграму, используя коллекцию аккаунтов."""
 
     def __init__(
@@ -23,7 +22,6 @@ class Scanner:
         fs: AbstractFileSystem,
         phones: list[str] = None,
         chat_cache=True,
-        revalidate_sessions=True,
     ):
         """
         Initializes a Scanner instance.
@@ -35,14 +33,17 @@ class Scanner:
             phones: List of phone numbers of Telegram accounts
                 to be used for scanning.
             chat_cache: Whether to use chat caching.
-            revalidate_sessions: Whether to ask user to enter validation code
-                if the session file for an account is invalid.
 
         """
-        self.fs = fs
-        self.phones = phones or [
+        new_phones = phones or [
             item.split(".session")[0] for item in fs.glob("*.session")
         ]
+        super().__init__(
+            accounts={phone: Account(fs, phone) for phone in new_phones},
+            fs=fs,
+            invalid="ignore",
+        )
+        self.phones = new_phones
 
         if chat_cache:
             self.chat_cache = ChatCache(fs)
@@ -50,52 +51,30 @@ class Scanner:
         else:
             self.chat_cache = None
 
-        self.revalidate_sessions = revalidate_sessions
-
         self.pbar = None
 
     # @ensure(lambda self: all(acc.app.is_connected for acc in self.available_accs))
-    @ensure(lambda self: all(acc.app for acc in self.accs))
+    @ensure(lambda self: all(acc.app for acc in self.accounts.values()))
     async def start_sessions(self):
+        await super().start_sessions()
+
         self.available_accs = asyncio.Queue()
-        self.accs = [Account(phone=phone, fs=self.fs) for phone in self.phones]
 
-        await asyncio.gather(
-            *(acc.start(revalidate=self.revalidate_sessions) for acc in self.accs),
-            return_exceptions=not self.revalidate_sessions,
-        )
-
-        for acc in self.accs:
+        for acc in self.accounts.values():
             if acc.started:
                 self.available_accs.put_nowait(acc)
 
     async def close_sessions(self):
-        await asyncio.gather(*[acc.stop() for acc in self.accs if acc.started])
-        self.accs = []
+        await super().close_sessions()
+        self.accounts = []
         self.available_accs = asyncio.Queue()
 
     @contextlib.asynccontextmanager
     async def session(self, pbar=None):
-        SESSION_LOCK = ".session_lock"
-        if self.fs.exists(SESSION_LOCK):
-            raise RuntimeError("Sessions are already in use")
-
-        self.pbar = pbar
-
         try:
-            await self.start_sessions()
-
-            self.fs.touch(SESSION_LOCK)
-
-            yield
-
+            async with super().session(pbar):
+                yield
         finally:
-            self.pbar = None
-
-            self.fs.rm(SESSION_LOCK)
-
-            await self.close_sessions()
-
             if self.chat_cache:
                 self.chat_cache.save()
 
@@ -199,7 +178,7 @@ class Scanner:
             (
                 acc.flood_wait_timeout
                 - (dt.datetime.now() - acc.flood_wait_from).seconds
-                for acc in self.accs
+                for acc in self.accounts.values()
                 if acc.flood_wait_from
             ),
             default=None,
