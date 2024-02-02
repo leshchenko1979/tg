@@ -1,6 +1,0 @@
-fsspec
-pyrogram
-tgcrypto
-cloudpickle
-icontract
-pandas

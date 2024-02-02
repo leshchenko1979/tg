@@ -1,0 +1,7 @@
+-r account/requirements.txt
+-r supabasefs/requirements.txt
+pyrogram
+tgcrypto
+cloudpickle
+icontract
+pandas
