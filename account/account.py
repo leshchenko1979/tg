@@ -261,21 +261,29 @@ class AccountCollection:
         Examples:
             >>> await start_sessions()
         """
-        done, pending = await asyncio.wait(
-            (
-                asyncio.create_task(acc.start(revalidate=self.invalid == "revalidate"))
-                for acc in self.accounts.values()
-            ),
-            return_when=asyncio.FIRST_EXCEPTION
+        tasks = {
+            phone: asyncio.create_task(
+                acc.start(revalidate=self.invalid == "revalidate")
+            )
+            for phone, acc in self.accounts.items()
+        }
+
+        return_when = (
+            asyncio.FIRST_EXCEPTION
             if self.invalid != "ignore"
-            else asyncio.ALL_COMPLETED,
+            else asyncio.ALL_COMPLETED
         )
 
+        await asyncio.wait(tasks.values(), return_when=return_when)
+
         # Check if any exceptions occured during the above wait
-        if self.invalid != "ignore":
-            for exc in done:
-                if exc.exception():
-                    raise AccountStartFailed from exc.exception()
+        for phone, task in tasks.items():
+            exc = task.exception()
+            if exc:
+                if self.invalid != "ignore":
+                    raise AccountStartFailed from exc
+                else:
+                    print(f"Exception for {phone}: {exc}")
 
     async def close_sessions(self):
         await asyncio.gather(
