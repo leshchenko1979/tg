@@ -1,6 +1,6 @@
 import pytest
 
-from sender import parse_telegram_message_url
+from tg.utils import parse_telegram_message_url
 
 
 # Happy path tests with various realistic test values

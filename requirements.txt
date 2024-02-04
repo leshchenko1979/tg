@@ -1,5 +1,0 @@
--r account/requirements.txt
--r supabasefs/requirements.txt
-cloudpickle
-icontract
-pandas

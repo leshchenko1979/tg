@@ -1,7 +1,7 @@
 import cloudpickle
 import pyrogram
 
-from .utils import ensure_at_single
+from ..utils import ensure_at_single
 
 
 class ChatCacheItem:

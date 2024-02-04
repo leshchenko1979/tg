@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from tg.account import AccountCollection
-from tg.account.account import AccountStartFailed
+from tg.account import AccountStartFailed
 
 # Assuming Account is a class with start and stop methods
 class Account:

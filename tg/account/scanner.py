@@ -4,11 +4,11 @@ import datetime as dt
 from typing import AsyncIterable
 
 import pyrogram
-from fsspec import AbstractFileSystem
 from icontract import ensure
 
-from .account import Account, AccountCollection
-from .chat_cache import ChatCache, ChatCacheItem
+from ..chat_cache import ChatCache, ChatCacheItem
+from . import Account, AccountCollection
+from ..utils import AbstractFileSystemProtocol, TQDMProtocol
 
 MAX_ACC_WAITING_TIME = 1000  # max waiting time for an available account
 
@@ -19,7 +19,7 @@ class Scanner(AccountCollection):
     def __init__(
         self,
         /,
-        fs: AbstractFileSystem,
+        fs: AbstractFileSystemProtocol,
         phones: list[str] = None,
         chat_cache=True,
     ):
@@ -70,13 +70,15 @@ class Scanner(AccountCollection):
         self.available_accs = asyncio.Queue()
 
     @contextlib.asynccontextmanager
-    async def session(self, pbar=None):
+    async def session(self, pbar: TQDMProtocol = None):
         try:
-            async with super().session(pbar):
+            self.pbar = pbar
+            async with super().session():
                 yield
         finally:
             if self.chat_cache:
                 self.chat_cache.save()
+            self.pbar = None
 
     async def get_chat(self, chat_id) -> pyrogram.types.Chat:
         if not self.chat_cache:

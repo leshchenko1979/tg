@@ -1,4 +1,6 @@
 import re
+import io
+from typing import Protocol
 
 
 def ensure_ats(strs: set[str]) -> set[str]:
@@ -51,3 +53,26 @@ def parse_telegram_message_url(url: str) -> (str, int):
     assert message_id > 0
 
     return chat_id, message_id
+
+class AbstractFileSystemProtocol(Protocol):
+    def glob(self, path: str) -> list[str]:
+        pass
+
+    def exists(self, path: str) -> bool:
+        pass
+
+    def open(self, path: str, mode: str = "r") -> io.FileIO:
+        pass
+
+    def touch(self, path: str) -> None:
+        pass
+
+    def rm(self, path: str) -> None:
+        pass
+
+    def mkdir(self, path: str) -> None:
+        pass
+
+class TQDMProtocol(Protocol):
+    def set_postfix_str(self, postfix: str) -> None:
+        pass

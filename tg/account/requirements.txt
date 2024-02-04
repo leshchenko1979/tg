@@ -1,3 +1,2 @@
-fsspec
 pyrogram
 icontract

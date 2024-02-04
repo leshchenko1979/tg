@@ -3,10 +3,11 @@ import contextlib
 import datetime as dt
 import os
 
-import fsspec
 import icontract
 import pyrogram
 from pyrogram.errors import AuthKeyUnregistered, UserDeactivated, SessionPasswordNeeded
+
+from ..utils import AbstractFileSystemProtocol
 
 
 class AccountStartFailed(Exception):
@@ -49,7 +50,7 @@ class Account:
     """
 
     app: pyrogram.Client
-    fs: fsspec.spec.AbstractFileSystem
+    fs: AbstractFileSystemProtocol
     phone: str
     filename: str
 
@@ -57,9 +58,7 @@ class Account:
     flood_wait_timeout: int
     flood_wait_from: dt.datetime
 
-    def __init__(
-        self, /, fs: fsspec.spec.AbstractFileSystem, phone=None, filename=None
-    ):
+    def __init__(self, /, fs: AbstractFileSystemProtocol, phone=None, filename=None):
         self.filename = filename or f"{phone}.session"
         self.fs = fs
         self.phone = phone
@@ -204,7 +203,9 @@ class AccountCollection:
     accounts: dict[str, Account]
 
     @icontract.require(lambda invalid: invalid in ["ignore", "raise", "revalidate"])
-    def __init__(self, accounts: dict[str, Account], fs, invalid: str):
+    def __init__(
+        self, accounts: dict[str, Account], fs: AbstractFileSystemProtocol, invalid: str
+    ):
         self.accounts = accounts
         self.fs = fs
         self.invalid = invalid
@@ -213,41 +214,27 @@ class AccountCollection:
         return self.accounts[item]
 
     @contextlib.asynccontextmanager
-    async def session(self, pbar=None):
+    async def session(self):
         """
         Context manager for managing the account session.
         Prevents other applications from using the same sessions.
         Automatically closes the sessions when the context is exited.
         Allows for progress bars to be displayed during the session.
 
-        Args:
-            pbar: Progress bar object.
-
         Raises:
             RuntimeError: If sessions are already in use.
-
-        Examples:
-            >>> async with session(pbar):
-            ...     # Perform actions within the session
         """
         SESSION_LOCK = ".session_lock"
         if self.fs.exists(SESSION_LOCK):
             raise RuntimeError("Sessions are already in use")
 
-        self.pbar = pbar
-
         try:
             await self.start_sessions()
-
             self.fs.touch(SESSION_LOCK)
-
             yield
 
         finally:
-            self.pbar = None
-
             self.fs.rm(SESSION_LOCK)
-
             await self.close_sessions()
 
     async def start_sessions(self):

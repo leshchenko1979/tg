@@ -5,7 +5,7 @@ from itertools import chain
 
 import pandas as pd
 
-from .scanner import Scanner
+from ..account.scanner import Scanner
 
 Msg = namedtuple("Message", "username link reach likes replies forwards datetime text")
 Channel = namedtuple("Channel", "username subscribers")
