@@ -1,2 +1,2 @@
-from stats_collector import StatsCollector
-from stats_db import StatsDatabase
+from .stats_collector import *
+from .stats_db import *
