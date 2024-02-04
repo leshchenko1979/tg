@@ -1,4 +1,0 @@
--r tg/account/requirements.txt
--r tg/chat_cache/requirements.txt
--r tg/stats/requirements.txt
--r tg/supabasefs/requirements.txt

@@ -15,7 +15,7 @@ setup(
     author='Alexey Leshchenko',
     author_email='leshchenko@email.com',
     packages=find_packages(),
-    package_data={'tg': ['**/requirements.txt']},
+    install_requires=["pyrogram", "supabase", "icontract"],
+    extras_require={"full": ["cloudpickle", "pandas"]},
     include_package_data=True,
-    install_requires=read_recursive_requirements("tg/requirements.txt"),
 )
