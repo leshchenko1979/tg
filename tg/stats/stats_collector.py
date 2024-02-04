@@ -5,7 +5,8 @@ from itertools import chain
 
 import pandas as pd
 
-from ..account.scanner import Scanner
+from ..account import Scanner
+from .stats_db import StatsDatabase
 
 Msg = namedtuple("Message", "username link reach likes replies forwards datetime text")
 Channel = namedtuple("Channel", "username subscribers")
@@ -107,6 +108,11 @@ class StatsCollector:
             "subscribers"
         ]
         self.stats.reset_index(inplace=True)
+
+    async def collect_and_save(self, stats_db: StatsDatabase, pbar=None):
+        await self.collect_all_stats(stats_db.channels, pbar)
+        stats_db.save_new_stats_to_db(self.stats)
+        stats_db.save_msgs(self.msgs_df)
 
 
 def shorten(text: str, max_length=200):
