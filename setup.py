@@ -13,7 +13,7 @@ setup(
     version='0.0.1',
     description='Tools for managing a pool of Telegram accounts',
     author='Alexey Leshchenko',
-    author_email='leshchenko@email.com',
+    author_email='leshchenko@google.com',
     packages=find_packages(),
     install_requires=["pyrogram", "supabase", "icontract", "cloudpickle"],
     extras_require={"full": ["pandas"]},
