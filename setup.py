@@ -15,7 +15,7 @@ setup(
     author='Alexey Leshchenko',
     author_email='leshchenko@email.com',
     packages=find_packages(),
-    install_requires=["pyrogram", "supabase", "icontract"],
-    extras_require={"full": ["cloudpickle", "pandas"]},
+    install_requires=["pyrogram", "supabase", "icontract", "cloudpickle"],
+    extras_require={"full": ["pandas"]},
     include_package_data=True,
 )
