@@ -66,7 +66,6 @@ class Scanner(AccountCollection):
 
     async def close_sessions(self):
         await super().close_sessions()
-        self.accounts = []
         self.available_accs = asyncio.Queue()
 
     @contextlib.asynccontextmanager
