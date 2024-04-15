@@ -265,7 +265,10 @@ class AccountCollection:
 
         # Check if any exceptions occured during the above wait
         for phone, task in tasks.items():
-            exc = task.exception()
+            exc = None
+            with contextlib.suppress(Exception):
+                exc = task.exception()
+
             if exc:
                 if self.invalid != "ignore":
                     raise AccountStartFailed from exc
