@@ -18,7 +18,8 @@ class AccountStartFailed(Exception):
         >>> raise AccountStartFailed("Failed to start account")
     """
 
-    pass
+    def __init__(self, phone: str):
+        self.phone = phone
 
 
 class Account:
@@ -271,7 +272,7 @@ class AccountCollection:
 
             if exc:
                 if self.invalid != "ignore":
-                    raise AccountStartFailed from exc
+                    raise AccountStartFailed(phone) from exc
                 else:
                     print(f"Exception for {phone}: {exc}")
 
