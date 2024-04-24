@@ -267,7 +267,7 @@ class AccountCollection:
         # Check if any exceptions occured during the above wait
         for phone, task in tasks.items():
             exc = None
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(asyncio.InvalidStateError):
                 exc = task.exception()
 
             if exc:
