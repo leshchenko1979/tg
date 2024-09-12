@@ -2,6 +2,7 @@ import asyncio
 import datetime as dt
 from collections import namedtuple
 from itertools import chain
+from icontract import require
 
 import pandas as pd
 
@@ -15,7 +16,8 @@ Channel = namedtuple("Channel", "username subscribers")
 class StatsCollector:
     scanner: Scanner
 
-    def __init__(self, scanner, min_date=None, depth=None):
+    @require(lambda min_date: isinstance(min_date, dt.datetime) or min_date is None)
+    def __init__(self, scanner, /, min_date=None, depth=None):
         self.scanner = scanner
         self.min_date = min_date
         if depth and min_date:

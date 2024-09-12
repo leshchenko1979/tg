@@ -4,7 +4,7 @@ import datetime as dt
 from typing import AsyncIterable
 
 import pyrogram
-from icontract import ensure
+from icontract import ensure, require
 
 from ..chat_cache import ChatCache, ChatCacheItem
 from . import Account, AccountCollection
@@ -108,6 +108,7 @@ class Scanner(AccountCollection):
         except pyrogram.errors.MsgIdInvalid:
             return 0
 
+    @require(lambda min_date: isinstance(min_date, dt.datetime) or min_date is None)
     async def get_chat_history(
         self, chat_id, limit=None, min_date=None
     ) -> AsyncIterable[pyrogram.types.Message]:
