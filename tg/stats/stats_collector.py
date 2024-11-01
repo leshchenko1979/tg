@@ -9,7 +9,7 @@ import pandas as pd
 from ..account import Scanner
 from .stats_db import StatsDatabase
 
-Msg = namedtuple("Message", "username link reach likes replies forwards datetime text")
+Msg = namedtuple("Message", "username link reach likes replies forwards datetime text full_text")
 Channel = namedtuple("Channel", "username subscribers")
 
 
@@ -75,6 +75,8 @@ class StatsCollector:
                 else 0
             )
 
+            full_text = msg.text or msg.caption or ""
+
             msgs_dict[msg.id] = Msg(
                 username=channel,
                 link=msg.link,
@@ -83,7 +85,8 @@ class StatsCollector:
                 replies=0,
                 forwards=msg.forwards or 0,
                 datetime=msg.date,
-                text=shorten(msg.text or msg.caption),
+                text=shorten(full_text),
+                full_text=full_text,
             )
 
         async def add_replies(msg_id, msg: Msg) -> Msg:
