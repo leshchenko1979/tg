@@ -171,7 +171,12 @@ class Account:
 
         await self.save_session_string()
 
-        await self.app.stop()
+        if getattr(self.app, "is_initialized", False):
+            await self.app.stop()
+        elif getattr(self.app, "is_connected", False):
+            await self.app.disconnect()
+        else:
+            raise RuntimeError("Client is not initialized or connected")
 
         self.started = False
 
@@ -238,6 +243,10 @@ class AccountCollection:
             self.fs.rm(SESSION_LOCK)
             await self.close_sessions()
 
+    @icontract.ensure(
+        lambda self: any(acc.started for acc in self.accounts.values()),
+        "No valid accounts were started",
+    )
     async def start_sessions(self):
         """
         Start the sessions for all accounts.
