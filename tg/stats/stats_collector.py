@@ -2,6 +2,7 @@ import asyncio
 import datetime as dt
 from collections import namedtuple
 from itertools import chain
+from typing import AsyncIterator
 from icontract import require
 
 import pandas as pd
@@ -48,7 +49,8 @@ class StatsCollector:
         for channel in channels:
             pbar.set_postfix_str(channel)
 
-            msg_stats.extend(await self.collect_msg_stats(channel))
+            async for msg in self.collect_msg_stats(channel):
+                msg_stats.append(msg)
             channel_stats.append(await self.collect_channel_stats(channel))
 
             pbar.update()
@@ -56,8 +58,11 @@ class StatsCollector:
         return msg_stats, channel_stats
 
     async def parallel_scan(self, channels):
+        async def collect_list(channel):
+            return [msg async for msg in self.collect_msg_stats(channel)]
+
         msg_stats = chain.from_iterable(
-            await asyncio.gather(*[self.collect_msg_stats(c) for c in channels])
+            await asyncio.gather(*[collect_list(c) for c in channels])
         )
         channel_stats = await asyncio.gather(
             *[self.collect_channel_stats(c) for c in channels]
@@ -65,7 +70,7 @@ class StatsCollector:
 
         return msg_stats, channel_stats
 
-    async def collect_msg_stats(self, channel) -> list[Msg]:
+    async def collect_msg_stats(self, channel) -> AsyncIterator[Msg]:
         msgs_dict = {}
 
         async for msg in self.scanner.get_chat_history(channel, min_date=self.min_date):
@@ -93,9 +98,10 @@ class StatsCollector:
             replies = await self.scanner.get_discussion_replies_count(channel, msg_id)
             return msg._replace(replies=replies)
 
-        return await asyncio.gather(
-            *[add_replies(msg_id, msg) for msg_id, msg in msgs_dict.items()]
-        )
+        tasks = [asyncio.create_task(add_replies(msg_id, msg)) for msg_id, msg in msgs_dict.items()]
+
+        for completed in asyncio.as_completed(tasks):
+            yield await completed
 
     async def collect_channel_stats(self, channel) -> Channel:
         chat = await self.scanner.get_chat(channel)
