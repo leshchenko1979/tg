@@ -193,7 +193,7 @@ class Scanner(AccountCollection):
         if self.pbar:
             old_postfix = self.pbar.postfix or ""
             self.pbar.set_postfix_str(
-                ", ".join([old_postfix, f"flood_wait {timeout} secs"])
+                ", ".join([old_postfix, f"{acc}: flood_wait {timeout} secs"])
             )
         else:
             print(f"{acc}: flood_wait {timeout} secs")
