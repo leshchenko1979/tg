@@ -2,12 +2,16 @@ import asyncio
 import contextlib
 import datetime as dt
 import os
+import logging
 
 import icontract
-import pyrogram
-from pyrogram.errors import AuthKeyUnregistered, UserDeactivated, SessionPasswordNeeded
+from telethon.errors import SessionPasswordNeededError
+from telethon.sessions import StringSession
+from telethon import TelegramClient
 
 from ..utils import AbstractFileSystemProtocol
+
+logger = logging.getLogger(__name__)
 
 
 class AccountStartFailed(Exception):
@@ -32,7 +36,7 @@ class Account:
         filename (str): Name of the session file.
 
     Attributes:
-        app (pyrogram.Client): Pyrogram client object.
+        app (telethon.client.telegramclient.TelegramClient): Telethon client object.
         fs (fsspec.spec.AbstractFileSystem): File system object.
         phone (str): Phone number associated with the account.
         filename (str): Name of the session file.
@@ -50,7 +54,7 @@ class Account:
         session: Context manager for managing the account session.
     """
 
-    app: pyrogram.Client
+    app: TelegramClient
     fs: AbstractFileSystemProtocol
     phone: str
     filename: str
@@ -103,26 +107,63 @@ class Account:
         Examples:
             >>> await account.start(revalidate=True)
         """
+        logger.debug(
+            "Account.start called for %s; revalidate=%s", self.phone, revalidate
+        )
         if self.fs.exists(self.filename):
+            logger.debug("Session file '%s' exists; attempting to load", self.filename)
             with self.fs.open(self.filename, "r") as f:
-                session_str = f.read()
-
-            self.app = pyrogram.Client(
-                self.phone, session_string=session_str, in_memory=True, no_updates=True
-            )
+                raw_session_str = f.read().strip()
+            logger.debug("Loaded session string with length=%d", len(raw_session_str))
 
             try:
-                await self.app.start()
+                session = StringSession(raw_session_str)
+            except Exception:
+                logger.warning(
+                    "Failed to load StringSession from stored value; revalidate=%s",
+                    revalidate,
+                )
+                if revalidate:
+                    await self.setup_new_session(
+                        code_retrieval_func, password_retrieval_func
+                    )
+                    self.started = True
+                    self.flood_wait_timeout = 0
+                    self.flood_wait_from = None
+                    logger.info(
+                        "Created new Telethon session via revalidation for %s",
+                        self.phone,
+                    )
+                    return
+                else:
+                    raise
 
-            except (AuthKeyUnregistered, UserDeactivated):
+            self.app = TelegramClient(
+                session,
+                int(os.environ["API_ID"]),
+                os.environ["API_HASH"],
+            )
+
+            await self.app.connect()
+            logger.debug(
+                "Client connected for %s: is_connected=%s",
+                self.phone,
+                self.app.is_connected(),
+            )
+
+            if not await self.app.is_user_authorized():
+                logger.info("Client is not authorized for %s", self.phone)
                 if revalidate:
                     await self.setup_new_session(
                         code_retrieval_func, password_retrieval_func
                     )
                 else:
-                    raise
+                    raise RuntimeError("Saved session is not authorized")
 
         elif revalidate:
+            logger.debug(
+                "No session file; starting setup_new_session for %s", self.phone
+            )
             await self.setup_new_session(code_retrieval_func, password_retrieval_func)
         else:
             raise RuntimeError(f"No session file for {self.phone}")
@@ -130,6 +171,7 @@ class Account:
         self.started = True
         self.flood_wait_timeout = 0
         self.flood_wait_from = None
+        logger.info("Account started for %s", self.phone)
 
     async def setup_new_session(self, code_retrieval_func, password_retrieval_func):
         """
@@ -142,28 +184,30 @@ class Account:
         Examples:
             >>> await setup_new_session(code_retrieval_func, password_retrieval_func)
         """
-        print(self.phone)
-        self.app = pyrogram.Client(
-            self.phone,
-            os.environ["API_ID"],
-            os.environ["API_HASH"],
-            in_memory=True,
-            no_updates=True,
-            phone_number=self.phone,
+        logger.info("Setting up new session for %s", self.phone)
+        self.app = TelegramClient(
+            StringSession(), int(os.environ["API_ID"]), os.environ["API_HASH"]
         )
 
         await self.app.connect()
+        logger.debug("Connected during setup_new_session for %s", self.phone)
 
-        code_object = await self.app.send_code(self.phone)
+        await self.app.send_code_request(self.phone)
+        logger.debug("Code request sent to %s", self.phone)
 
         try:
-            await self.app.sign_in(
-                self.phone, code_object.phone_code_hash, code_retrieval_func()
-            )
-        except SessionPasswordNeeded:
-            await self.app.check_password(password_retrieval_func())
+            code = code_retrieval_func()
+            logger.debug("Attempting sign_in for %s", self.phone)
+            await self.app.sign_in(self.phone, code)
+        except SessionPasswordNeededError:
+            logger.info("2FA required for %s; prompting for password", self.phone)
+            password = password_retrieval_func()
+            await self.app.sign_in(password=password)
 
         self.started = True
+        logger.info("New session established for %s", self.phone)
+        # Persist the new Telethon session immediately to avoid stale subsequent reads
+        await self.save_session_string()
 
     async def stop(self):
         if not self.started:
@@ -171,20 +215,22 @@ class Account:
 
         await self.save_session_string()
 
-        if getattr(self.app, "is_initialized", False):
-            await self.app.stop()
-        elif getattr(self.app, "is_connected", False):
+        if self.app.is_connected():
+            logger.debug("Disconnecting client for %s", self.phone)
             await self.app.disconnect()
-        else:
-            raise RuntimeError("Client is not initialized or connected")
 
         self.started = False
+        logger.info("Account stopped for %s", self.phone)
 
     async def save_session_string(self):
-        session_str = await self.app.export_session_string()
+        # Save StringSession representation
+        session_str = self.app.session.save()
 
         with self.fs.open(self.filename, "w") as f:
             f.write(session_str)
+        logger.debug(
+            "Session string saved for %s (length=%d)", self.phone, len(session_str)
+        )
 
 
 class AccountCollection:

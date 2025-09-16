@@ -10,7 +10,9 @@ import pandas as pd
 from ..account import Scanner
 from .stats_db import StatsDatabase
 
-Msg = namedtuple("Message", "username link reach likes replies forwards datetime text full_text")
+Msg = namedtuple(
+    "Message", "username link reach likes replies forwards datetime text full_text"
+)
 Channel = namedtuple("Channel", "username subscribers")
 
 
@@ -74,21 +76,27 @@ class StatsCollector:
         msgs_dict = {}
 
         async for msg in self.scanner.get_chat_history(channel, min_date=self.min_date):
-            likes = (
-                sum(reaction.count for reaction in msg.reactions.reactions)
-                if msg.reactions
-                else 0
-            )
+            # Telethon reactions structure
+            likes = 0
+            if hasattr(msg, "reactions") and msg.reactions:
+                if hasattr(msg.reactions, "results"):
+                    likes = sum(result.count for result in msg.reactions.results)
+                elif hasattr(msg.reactions, "reactions"):
+                    likes = sum(reaction.count for reaction in msg.reactions.reactions)
 
-            full_text = msg.text or msg.caption or ""
+            # Telethon message text/caption
+            full_text = msg.message or msg.raw_text or ""
+
+            # Telethon message link format
+            link = f"https://t.me/{channel}/{msg.id}" if hasattr(msg, "id") else ""
 
             msgs_dict[msg.id] = Msg(
                 username=channel,
-                link=msg.link,
-                reach=msg.views or 0,
+                link=link,
+                reach=getattr(msg, "views", 0) or 0,
                 likes=likes,
                 replies=0,
-                forwards=msg.forwards or 0,
+                forwards=getattr(msg, "forwards", 0) or 0,
                 datetime=msg.date,
                 text=shorten(full_text),
                 full_text=full_text,
@@ -98,15 +106,19 @@ class StatsCollector:
             replies = await self.scanner.get_discussion_replies_count(channel, msg_id)
             return msg._replace(replies=replies)
 
-        tasks = [asyncio.create_task(add_replies(msg_id, msg)) for msg_id, msg in msgs_dict.items()]
+        tasks = [
+            asyncio.create_task(add_replies(msg_id, msg))
+            for msg_id, msg in msgs_dict.items()
+        ]
 
         for completed in asyncio.as_completed(tasks):
             yield await completed
 
     async def collect_channel_stats(self, channel) -> Channel:
-        chat = await self.scanner.get_chat(channel)
+        # Telethon chat members count
+        members_count = await self.scanner.get_chat_members_count(channel)
 
-        return Channel(username=channel, subscribers=chat.members_count)
+        return Channel(username=channel, subscribers=members_count)
 
     def calc_msg_popularity(self):
         self.msgs_df["popularity"] = (

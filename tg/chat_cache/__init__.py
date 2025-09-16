@@ -1,5 +1,4 @@
 import cloudpickle
-import pyrogram
 
 from ..utils import ensure_at_single
 
@@ -7,7 +6,7 @@ from ..utils import ensure_at_single
 class ChatCacheItem:
     """ "Элемент кэша чатов."""
 
-    chat: pyrogram.types.Chat
+    chat: object
     members_count: int
 
     def __init__(self, chat):
