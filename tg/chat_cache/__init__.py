@@ -33,11 +33,11 @@ class ChatCache:
     def load(self):
         if self.fs.exists(".chat_cache"):
             with self.fs.open(".chat_cache", "rb") as f:
-                self.chat_cache = cloudpickle.load(f)
+                self.cache = cloudpickle.loads(f)
 
         # нормализуем все названия чатов при загрузке
         self.cache = {ensure_at_single(key): value for key, value in self.cache.items()}
 
     def save(self):
         with self.fs.open(".chat_cache", "wb") as f:
-            cloudpickle.dump(self.chat_cache, f)
+            f.write(cloudpickle.dumps(self.cache))
