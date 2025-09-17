@@ -126,11 +126,26 @@ class StatsCollector:
         ) / self.msgs_df.reach
 
     def collect_stats_to_single_df(self):
-        self.stats = self.msgs_df.groupby("username").agg({"reach": "mean"}).astype(int)
-        self.stats["subscribers"] = self.channels_df.set_index("username")[
-            "subscribers"
-        ]
-        self.stats.reset_index(inplace=True)
+        # Compute mean reach per channel (may be empty if there are no messages)
+        if (
+            hasattr(self, "msgs_df")
+            and not self.msgs_df.empty
+            and "username" in self.msgs_df.columns
+        ):
+            reach_by_channel = self.msgs_df.groupby("username", as_index=False)[
+                "reach"
+            ].mean()
+            # Round up reach values
+            reach_by_channel["reach"] = reach_by_channel["reach"].apply(
+                lambda x: int(x) if pd.notna(x) else x
+            )
+        else:
+            reach_by_channel = pd.DataFrame(columns=["username", "reach"])
+
+        # Merge with channels to include channels with no messages (reach = NaN)
+        self.stats = pd.merge(
+            self.channels_df, reach_by_channel, on="username", how="left"
+        )
 
     async def collect_and_save(self, stats_db: StatsDatabase, pbar=None):
         await self.collect_all_stats(stats_db.channels, pbar)
