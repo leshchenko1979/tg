@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import datetime as dt
+import logging
 from typing import AsyncIterable, Any
 
 from icontract import ensure, require
@@ -12,6 +13,8 @@ from . import Account, AccountCollection
 from ..utils import AbstractFileSystemProtocol, TQDMProtocol
 
 MAX_ACC_WAITING_TIME = 1000  # max waiting time for an available account
+
+logger = logging.getLogger(__name__)
 
 
 class Scanner(AccountCollection):
@@ -228,7 +231,7 @@ class Scanner(AccountCollection):
                 ", ".join([old_postfix, f"{acc}: flood_wait {timeout} secs"])
             )
         else:
-            print(f"{acc}: flood_wait {timeout} secs")
+            logger.info("%s: flood_wait %s secs", acc, timeout)
 
         await asyncio.sleep(timeout)
 

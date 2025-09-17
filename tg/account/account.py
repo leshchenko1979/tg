@@ -329,7 +329,7 @@ class AccountCollection:
                 if self.invalid != "ignore":
                     raise AccountStartFailed(phone) from exc
                 else:
-                    print(f"Exception for {phone}: {exc}")
+                    logger.warning("Exception for %s: %s", phone, exc)
 
     async def close_sessions(self):
         await asyncio.gather(
