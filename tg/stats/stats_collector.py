@@ -10,6 +10,10 @@ import pandas as pd
 from ..account import Scanner
 from .stats_db import StatsDatabase
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 Msg = namedtuple(
     "Message", "username link reach likes replies forwards datetime text full_text"
 )
@@ -40,6 +44,25 @@ class StatsCollector:
 
         self.msgs_df = pd.DataFrame(msg_stats)
         self.channels_df = pd.DataFrame(channel_stats)
+
+        # Handle NaN values in msgs_df before processing
+        if not self.msgs_df.empty:
+            # Fill NaN values with appropriate defaults for JSON serialization
+            self.msgs_df = self.msgs_df.fillna(
+                {
+                    "reach": 0,
+                    "likes": 0,
+                    "replies": 0,
+                    "forwards": 0,
+                    "text": "",
+                    "full_text": "",
+                }
+            )
+            # Convert numeric columns to int to avoid "0.0" strings in JSON
+            numeric_columns = ["reach", "likes", "replies", "forwards"]
+            for col in numeric_columns:
+                if col in self.msgs_df.columns:
+                    self.msgs_df[col] = self.msgs_df[col].astype(int)
 
         self.calc_msg_popularity()
         self.collect_stats_to_single_df()
@@ -73,9 +96,16 @@ class StatsCollector:
         return msg_stats, channel_stats
 
     async def collect_msg_stats(self, channel) -> AsyncIterator[Msg]:
+        logger.info(f"Starting to collect message stats for channel: {channel}")
         msgs_dict = {}
+        message_count = 0
 
         async for msg in self.scanner.get_chat_history(channel, min_date=self.min_date):
+            message_count += 1
+            logger.debug(
+                f"Processing message {message_count} (ID: {msg.id}) from channel {channel}"
+            )
+
             # Telethon reactions structure
             likes = 0
             if hasattr(msg, "reactions") and msg.reactions:
@@ -102,17 +132,51 @@ class StatsCollector:
                 full_text=full_text,
             )
 
+        logger.info(
+            f"Collected {message_count} messages from channel {channel}, now getting replies counts"
+        )
+
         async def add_replies(msg_id, msg: Msg) -> Msg:
-            replies = await self.scanner.get_discussion_replies_count(channel, msg_id)
-            return msg._replace(replies=replies)
+            logger.debug(
+                f"Getting replies count for message {msg_id} in channel {channel} (link: {msg.link})"
+            )
+            try:
+                replies = await self.scanner.get_discussion_replies_count(
+                    channel, msg_id
+                )
+                logger.debug(
+                    f"Message {msg_id} in channel {channel} has {replies} replies"
+                )
+                return msg._replace(replies=replies)
+            except Exception as e:
+                logger.error(
+                    f"Failed to get replies count for message {msg_id} in channel {channel}. "
+                    f"Message details: link={msg.link}, datetime={msg.datetime}, text_preview='{msg.text[:50]}...'. "
+                    f"Error: {e}"
+                )
+                return msg._replace(replies=0)
 
         tasks = [
             asyncio.create_task(add_replies(msg_id, msg))
             for msg_id, msg in msgs_dict.items()
         ]
 
+        logger.info(
+            f"Created {len(tasks)} tasks to get replies counts for channel {channel}"
+        )
+        completed_count = 0
+
         for completed in asyncio.as_completed(tasks):
-            yield await completed
+            completed_count += 1
+            result = await completed
+            logger.debug(
+                f"Completed replies task {completed_count}/{len(tasks)} for channel {channel}"
+            )
+            yield result
+
+        logger.info(
+            f"Completed all {completed_count} reply collection tasks for channel {channel}"
+        )
 
     async def collect_channel_stats(self, channel) -> Channel:
         # Telethon chat members count
@@ -126,26 +190,28 @@ class StatsCollector:
         ) / self.msgs_df.reach
 
     def collect_stats_to_single_df(self):
-        # Compute mean reach per channel (may be empty if there are no messages)
+        # Check if msgs_df is valid and contains 'username'
         if (
-            hasattr(self, "msgs_df")
+            getattr(self, "msgs_df", None) is not None
             and not self.msgs_df.empty
             and "username" in self.msgs_df.columns
         ):
-            reach_by_channel = self.msgs_df.groupby("username", as_index=False)[
-                "reach"
-            ].mean()
-            # Round up reach values
-            reach_by_channel["reach"] = reach_by_channel["reach"].apply(
-                lambda x: int(x) if pd.notna(x) else x
+            # Compute mean reach per channel and fill NaNs with 0, cast to int
+            reach_by_channel = (
+                self.msgs_df.groupby("username", as_index=False, sort=False)["reach"]
+                .mean()
+                .fillna(0)
+                .astype({"reach": int})
             )
         else:
-            reach_by_channel = pd.DataFrame(columns=["username", "reach"])
+            reach_by_channel = pd.DataFrame({"username": [], "reach": []})
 
-        # Merge with channels to include channels with no messages (reach = NaN)
+        # Efficient merge to include all channels, fill missing reach with 0 and cast to int
         self.stats = pd.merge(
             self.channels_df, reach_by_channel, on="username", how="left"
         )
+        self.stats["reach"] = self.stats["reach"].fillna(0).astype(int)
+        assert not self.stats.isna().any().any(), "self.stats contains NaN values"
 
     async def collect_and_save(self, stats_db: StatsDatabase, pbar=None):
         await self.collect_all_stats(stats_db.channels, pbar)
