@@ -1,4 +1,3 @@
-import asyncio
 import contextlib
 import datetime as dt
 import logging
@@ -7,17 +6,16 @@ from typing import AsyncIterable, Any
 from icontract import ensure, require
 from telethon import functions, types
 from telethon.errors.rpcerrorlist import (
-    FloodWaitError,
     MsgIdInvalidError,
     MessageIdInvalidError,
     PeerIdInvalidError,
 )
 
 from ..chat_cache import ChatCache, ChatCacheItem
-from . import Account, AccountCollection
+from .account import Account
+from .collection import AccountCollection
 from ..utils import AbstractFileSystemProtocol, TQDMProtocol
 
-MAX_ACC_WAITING_TIME = 60 * 5  # max waiting time for an available account
 
 logger = logging.getLogger(__name__)
 
@@ -60,42 +58,22 @@ class Scanner(AccountCollection):
         else:
             self.chat_cache = None
 
-        self.pbar = None
-
     @ensure(
         lambda self: self.available_accs.qsize() > 0,
         "No accounts available after start",
     )
     async def start_sessions(self):
+        """Start sessions and ensure accounts are available."""
         await super().start_sessions()
-
-        self.available_accs = asyncio.Queue()
-        started_count = 0
-
-        for acc in self.accounts.values():
-            if acc.started:
-                self.available_accs.put_nowait(acc)
-                started_count += 1
-                logger.info(f"Account {acc.phone} started and added to available queue")
-            else:
-                logger.warning(f"Account {acc.phone} failed to start")
-
-        logger.info(f"Started {started_count}/{len(self.accounts)} accounts")
-
-    async def close_sessions(self):
-        await super().close_sessions()
-        self.available_accs = asyncio.Queue()
 
     @contextlib.asynccontextmanager
     async def session(self, pbar: TQDMProtocol = None):
         try:
-            self.pbar = pbar
-            async with super().session():
+            async with super().session(pbar):
                 yield
         finally:
             if self.chat_cache:
                 self.chat_cache.save()
-            self.pbar = None
 
     async def get_chat(self, chat_id) -> Any:
         if not self.chat_cache:
@@ -139,19 +117,65 @@ class Scanner(AccountCollection):
         return chat_cache_item.members_count
 
     async def get_discussion_replies_count(self, chat_id, msg_id) -> int:
+        logger.debug(
+            f"Getting discussion replies count for chat_id={chat_id}, msg_id={msg_id}"
+        )
+
+        # Basic validation
+        if not msg_id or msg_id <= 0:
+            logger.warning(
+                f"Invalid message ID {msg_id} for chat {chat_id} - must be positive integer"
+            )
+            return 0
+
+        if not chat_id:
+            logger.warning(f"Invalid chat_id {chat_id} - cannot be empty")
+            return 0
+
         try:
             async with self.get_acc() as acc:
+                logger.debug(
+                    f"Using account {acc.phone} for get_discussion_replies_count"
+                )
                 entity = await acc.app.get_entity(chat_id)
+                logger.debug(
+                    f"Entity resolved for chat_id={chat_id}: {type(entity).__name__}"
+                )
+
                 # Use iter_messages with reply_to to get discussion replies
                 count = 0
                 async for _ in acc.app.iter_messages(
                     entity, reply_to=msg_id, limit=1000
                 ):
                     count += 1
+
+                logger.debug(
+                    f"Successfully counted {count} replies for msg_id={msg_id} in chat_id={chat_id}"
+                )
                 return count
-        except (MsgIdInvalidError, MessageIdInvalidError, PeerIdInvalidError):
-            logger.debug(
-                f"Invalid message ID {msg_id} for chat {chat_id}, returning 0 replies"
+
+        except MsgIdInvalidError as e:
+            logger.warning(
+                f"MsgIdInvalidError: Invalid message ID {msg_id} for chat {chat_id}. "
+                f"Error details: {e}. This usually means the message doesn't exist or was deleted."
+            )
+            return 0
+        except MessageIdInvalidError as e:
+            logger.warning(
+                f"MessageIdInvalidError: Invalid message ID {msg_id} for chat {chat_id}. "
+                f"Error details: {e}. This usually means the message ID is malformed or out of range."
+            )
+            return 0
+        except PeerIdInvalidError as e:
+            logger.warning(
+                f"PeerIdInvalidError: Invalid peer (chat) ID {chat_id} for message {msg_id}. "
+                f"Error details: {e}. This usually means the chat doesn't exist or is inaccessible."
+            )
+            return 0
+        except Exception as e:
+            logger.error(
+                f"Unexpected error getting discussion replies count for chat_id={chat_id}, msg_id={msg_id}. "
+                f"Error type: {type(e).__name__}, Error details: {e}"
             )
             return 0
 
@@ -177,127 +201,64 @@ class Scanner(AccountCollection):
     async def get_discussion_replies(
         self, chat_id, msg_id, limit=None
     ) -> AsyncIterable[Any]:
+        logger.debug(
+            f"Getting discussion replies for chat_id={chat_id}, msg_id={msg_id}, limit={limit}"
+        )
+
+        # Basic validation
+        if not msg_id or msg_id <= 0:
+            logger.warning(
+                f"Invalid message ID {msg_id} for chat {chat_id} - must be positive integer"
+            )
+            return
+
+        if not chat_id:
+            logger.warning(f"Invalid chat_id {chat_id} - cannot be empty")
+            return
+
         try:
             async with self.get_acc() as acc:
+                logger.debug(f"Using account {acc.phone} for get_discussion_replies")
                 entity = await acc.app.get_entity(chat_id)
+                logger.debug(
+                    f"Entity resolved for chat_id={chat_id}: {type(entity).__name__}"
+                )
+
                 # Use iter_messages with reply_to to get discussion replies
+                reply_count = 0
                 async for msg in acc.app.iter_messages(
                     entity, reply_to=msg_id, limit=limit
                 ):
+                    reply_count += 1
                     yield msg
-        except (MsgIdInvalidError, MessageIdInvalidError, PeerIdInvalidError):
-            logger.debug(
-                f"Invalid message ID {msg_id} for chat {chat_id}, returning empty replies"
+
+                logger.debug(
+                    f"Successfully yielded {reply_count} replies for msg_id={msg_id} in chat_id={chat_id}"
+                )
+
+        except MsgIdInvalidError as e:
+            logger.warning(
+                f"MsgIdInvalidError: Invalid message ID {msg_id} for chat {chat_id}. "
+                f"Error details: {e}. This usually means the message doesn't exist or was deleted."
+            )
+            return
+        except MessageIdInvalidError as e:
+            logger.warning(
+                f"MessageIdInvalidError: Invalid message ID {msg_id} for chat {chat_id}. "
+                f"Error details: {e}. This usually means the message ID is malformed or out of range."
+            )
+            return
+        except PeerIdInvalidError as e:
+            logger.warning(
+                f"PeerIdInvalidError: Invalid peer (chat) ID {chat_id} for message {msg_id}. "
+                f"Error details: {e}. This usually means the chat doesn't exist or is inaccessible."
+            )
+            return
+        except Exception as e:
+            logger.error(
+                f"Unexpected error getting discussion replies for chat_id={chat_id}, msg_id={msg_id}. "
+                f"Error type: {type(e).__name__}, Error details: {e}"
             )
             return
 
     # removed generic pyrogram command wrappers; each method uses Telethon directly
-
-    @contextlib.asynccontextmanager
-    async def get_acc(self):  # sourcery skip: raise-from-previous-error
-        logger.debug(
-            f"Requesting account, timeout: {MAX_ACC_WAITING_TIME}s. Available queue size: {self.available_accs.qsize()}"
-        )
-
-        try:
-            acc: Account = await asyncio.wait_for(
-                self.available_accs.get(), timeout=MAX_ACC_WAITING_TIME
-            )
-            logger.debug(
-                f"Got account: {acc.phone}. Accounts in queue: {self.available_accs.qsize()}"
-            )
-        except asyncio.TimeoutError:
-            # Only check flood_wait after timing out waiting for accounts
-            logger.debug(
-                f"Timeout waiting for account. Queue size: {self.available_accs.qsize()}"
-            )
-            min_wait = self.min_wait()
-            if min_wait and min_wait > 0:
-                available_at = dt.datetime.now() + dt.timedelta(seconds=min_wait)
-                logger.error(
-                    f"All accounts unavailable. First available at {available_at}. Min wait: {min_wait}"
-                )
-                raise RuntimeError(
-                    f"All accounts unavailable. First available at {available_at}."
-                )
-            else:
-                logger.error(
-                    f"Timeout waiting for account after {MAX_ACC_WAITING_TIME}s. No accounts in flood_wait."
-                )
-                raise RuntimeError(
-                    f"All accounts unavailable. Max waiting time of {MAX_ACC_WAITING_TIME} secs exceeded."
-                )
-
-        try:
-            yield acc
-            logger.debug(f"Returning account {acc.phone} to queue")
-            self.available_accs.put_nowait(acc)
-
-        except FloodWaitError as e:
-            timeout_seconds = getattr(e, "seconds", None)
-            if timeout_seconds is None and hasattr(e, "retry_after"):
-                timeout_seconds = e.retry_after
-            if timeout_seconds is None:
-                timeout_seconds = 60
-            logger.warning(f"FloodWaitError for {acc.phone}: {timeout_seconds}s")
-            asyncio.create_task(self.flood_wait(acc, timeout_seconds))
-
-        except Exception as e:
-            logger.error(f"Exception for account {acc.phone}: {e}")
-            self.available_accs.put_nowait(acc)
-            raise
-
-    def min_wait(self):
-        flood_wait_accounts = []
-        for acc in self.accounts.values():
-            if acc.flood_wait_from:
-                elapsed = (dt.datetime.now() - acc.flood_wait_from).total_seconds()
-                remaining = acc.flood_wait_timeout - elapsed
-                flood_wait_accounts.append(
-                    (acc.phone, remaining, acc.flood_wait_timeout, elapsed)
-                )
-                logger.debug(
-                    f"Account {acc.phone}: timeout={acc.flood_wait_timeout}s, elapsed={elapsed:.1f}s, remaining={remaining:.1f}s"
-                )
-
-        if flood_wait_accounts:
-            min_remaining = min(remaining for _, remaining, _, _ in flood_wait_accounts)
-            logger.info(
-                f"Flood wait accounts: {len(flood_wait_accounts)}, min remaining: {min_remaining:.1f}s"
-            )
-            for phone, remaining, timeout, elapsed in flood_wait_accounts:
-                logger.info(
-                    f"  {phone}: {remaining:.1f}s remaining (timeout: {timeout}s, elapsed: {elapsed:.1f}s)"
-                )
-            return min_remaining
-        else:
-            logger.debug("No accounts in flood_wait state")
-            return None
-
-    async def flood_wait(self, acc: Account, timeout: int):
-        acc.flood_wait_from = dt.datetime.now()
-        acc.flood_wait_timeout = timeout
-
-        logger.info(f"Account {acc.phone} entering flood_wait for {timeout} seconds")
-
-        if self.pbar:
-            old_postfix = self.pbar.postfix or ""
-            self.pbar.set_postfix_str(
-                ", ".join([old_postfix, f"{acc}: flood_wait {timeout} secs"])
-            )
-        else:
-            logger.info("%s: flood_wait %s secs", acc, timeout)
-
-        await asyncio.sleep(timeout)
-
-        logger.info(
-            f"Account {acc.phone} flood_wait completed, returning to available queue"
-        )
-
-        if self.pbar:
-            self.pbar.set_postfix_str(old_postfix)
-
-        self.available_accs.put_nowait(acc)
-
-        acc.flood_wait_from = None
-        acc.flood_wait_timeout = 0

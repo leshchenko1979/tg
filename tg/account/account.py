@@ -1,10 +1,8 @@
-import asyncio
 import contextlib
 import datetime as dt
 import os
 import logging
 
-import icontract
 from telethon.errors import SessionPasswordNeededError
 from telethon.sessions import StringSession
 from telethon import TelegramClient
@@ -230,108 +228,4 @@ class Account:
             f.write(session_str)
         logger.debug(
             "Session string saved for %s (length=%d)", self.phone, len(session_str)
-        )
-
-
-class AccountCollection:
-    """
-    Collection of accounts with session management.
-
-    Args:
-        accounts (dict): Dictionary of accounts.
-        fs: File system object.
-        invalid (str): Behaviour during session start-up.
-        Can be "ignore", "raise", or "revalidate":
-            - "ignore": Ignore any exceptions and continue.
-            - "raise": Raise AccountStartFailed if an exception occurs.
-            - "revalidate": Revalidate the session if an exception occurs.
-
-    Examples:
-        >>> collection = AccountCollection(accounts, fs, invalid)
-        >>> async with collection.session():
-        ...     # Perform actions within the session
-    """
-
-    accounts: dict[str, Account]
-
-    @icontract.require(lambda invalid: invalid in ["ignore", "raise", "revalidate"])
-    def __init__(
-        self, accounts: dict[str, Account], fs: AbstractFileSystemProtocol, invalid: str
-    ):
-        self.accounts = accounts
-        self.fs = fs
-        self.invalid = invalid
-
-    def __getitem__(self, item):
-        return self.accounts[item]
-
-    @contextlib.asynccontextmanager
-    async def session(self):
-        """
-        Context manager for managing the account session.
-        Prevents other applications from using the same sessions.
-        Automatically closes the sessions when the context is exited.
-        Allows for progress bars to be displayed during the session.
-
-        Raises:
-            RuntimeError: If sessions are already in use.
-        """
-        SESSION_LOCK = ".session_lock"
-        if self.fs.exists(SESSION_LOCK):
-            raise RuntimeError("Sessions are already in use")
-
-        try:
-            await self.start_sessions()
-            self.fs.touch(SESSION_LOCK)
-            yield
-
-        finally:
-            self.fs.rm(SESSION_LOCK)
-            await self.close_sessions()
-
-    @icontract.ensure(
-        lambda self: any(acc.started for acc in self.accounts.values()),
-        "No valid accounts were started",
-    )
-    async def start_sessions(self):
-        """
-        Start the sessions for all accounts.
-
-        Raises:
-            AccountStartFailed: If an exception occurs during account start
-            and self.invalid != "ignore".
-
-        Examples:
-            >>> await start_sessions()
-        """
-        tasks = {
-            phone: asyncio.create_task(
-                acc.start(revalidate=self.invalid == "revalidate")
-            )
-            for phone, acc in self.accounts.items()
-        }
-
-        return_when = (
-            asyncio.FIRST_EXCEPTION
-            if self.invalid != "ignore"
-            else asyncio.ALL_COMPLETED
-        )
-
-        await asyncio.wait(tasks.values(), return_when=return_when)
-
-        # Check if any exceptions occured during the above wait
-        for phone, task in tasks.items():
-            exc = None
-            with contextlib.suppress(asyncio.InvalidStateError):
-                exc = task.exception()
-
-            if exc:
-                if self.invalid != "ignore":
-                    raise AccountStartFailed(phone) from exc
-                else:
-                    logger.warning("Exception for %s: %s", phone, exc)
-
-    async def close_sessions(self):
-        await asyncio.gather(
-            *[acc.stop() for acc in self.accounts.values() if acc.started]
         )
