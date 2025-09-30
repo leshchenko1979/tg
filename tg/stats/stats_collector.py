@@ -118,7 +118,9 @@ class StatsCollector:
             full_text = msg.message or msg.raw_text or ""
 
             # Telethon message link format
-            link = f"https://t.me/{channel}/{msg.id}" if hasattr(msg, "id") else ""
+            # Remove @ symbol from channel name for proper URL format
+            channel_name = channel.lstrip("@") if channel.startswith("@") else channel
+            link = f"https://t.me/{channel_name}/{msg.id}" if hasattr(msg, "id") else ""
 
             msgs_dict[msg.id] = Msg(
                 username=channel,
