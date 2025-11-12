@@ -57,6 +57,10 @@ class AccountCollection:
     def __getitem__(self, item):
         return self.accounts[item]
 
+    def __contains__(self, key):
+        """Check if account exists in collection."""
+        return key in self.accounts
+
     @contextlib.asynccontextmanager
     async def session(self, pbar: Optional[TQDMProtocol] = None):
         """
