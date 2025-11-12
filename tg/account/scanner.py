@@ -76,6 +76,18 @@ class Scanner(AccountCollection):
                 self.chat_cache.save()
 
     async def get_chat(self, chat_id) -> Any:
+        """
+        Get chat entity, using cache if available.
+
+        Retrieves chat information from Telegram API, with optional caching
+        to reduce API calls for repeated requests.
+
+        Args:
+            chat_id: Chat identifier (username, ID, etc.).
+
+        Returns:
+            Any: Chat entity object from Telegram API.
+        """
         if not self.chat_cache:
             async with self.get_acc() as acc:
                 return await acc.app.get_entity(chat_id)
@@ -88,6 +100,18 @@ class Scanner(AccountCollection):
         return self.chat_cache[chat_id].chat
 
     async def get_chat_members_count(self, chat_id) -> int:
+        """
+        Get the member count for a chat, using cache if available.
+
+        Retrieves the number of participants/members in a chat.
+        Uses caching to avoid repeated API calls.
+
+        Args:
+            chat_id: Chat identifier (username, ID, etc.).
+
+        Returns:
+            int: Number of members in the chat.
+        """
         async def fetch_count(app, entity):
             # Check for channel types
             if isinstance(
@@ -117,6 +141,19 @@ class Scanner(AccountCollection):
         return chat_cache_item.members_count
 
     async def get_discussion_replies_count(self, chat_id, msg_id) -> int:
+        """
+        Get the number of discussion replies for a message.
+
+        Counts replies to a specific message in a discussion thread.
+        Handles various error conditions gracefully.
+
+        Args:
+            chat_id: Chat identifier containing the message.
+            msg_id (int): Message ID to count replies for.
+
+        Returns:
+            int: Number of replies to the message.
+        """
         logger.debug(
             f"Getting discussion replies count for chat_id={chat_id}, msg_id={msg_id}"
         )
@@ -183,6 +220,20 @@ class Scanner(AccountCollection):
     async def get_chat_history(
         self, chat_id, limit=None, min_date=None
     ) -> AsyncIterable[Any]:
+        """
+        Get chat message history.
+
+        Retrieves messages from a chat in chronological order (newest first).
+        Optionally filter by date and limit the number of messages.
+
+        Args:
+            chat_id: Chat identifier to get history from.
+            limit (int, optional): Maximum number of messages to retrieve.
+            min_date (datetime.datetime, optional): Minimum date for messages.
+
+        Yields:
+            Any: Message objects from the chat.
+        """
         async with self.get_acc() as acc:
             entity = await acc.app.get_entity(chat_id)
             count = 0
@@ -201,6 +252,20 @@ class Scanner(AccountCollection):
     async def get_discussion_replies(
         self, chat_id, msg_id, limit=None
     ) -> AsyncIterable[Any]:
+        """
+        Get discussion replies for a message.
+
+        Retrieves replies to a specific message in a discussion thread.
+        Handles various error conditions gracefully.
+
+        Args:
+            chat_id: Chat identifier containing the message.
+            msg_id (int): Message ID to get replies for.
+            limit (int, optional): Maximum number of replies to retrieve.
+
+        Yields:
+            Any: Reply message objects.
+        """
         logger.debug(
             f"Getting discussion replies for chat_id={chat_id}, msg_id={msg_id}, limit={limit}"
         )

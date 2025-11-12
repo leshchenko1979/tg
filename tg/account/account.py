@@ -76,6 +76,16 @@ class Account:
         api_id=None,
         api_hash=None,
     ):
+        """
+        Initialize the Account object.
+
+        Args:
+            fs: File system object for reading/writing session files.
+            phone (str, optional): Phone number associated with the account.
+            filename (str, optional): Name of the session file. If not provided, defaults to "{phone}.session".
+            api_id (int, optional): Telegram API ID. If not provided, will be loaded from API_ID environment variable.
+            api_hash (str, optional): Telegram API hash. If not provided, will be loaded from API_HASH environment variable.
+        """
         self.filename = filename or f"{phone}.session"
         self.fs = fs
         self.phone = phone
@@ -95,10 +105,25 @@ class Account:
         return api_id, api_hash
 
     def __repr__(self) -> str:
+        """
+        Return a string representation of the Account object.
+
+        Returns:
+            str: String representation showing the account phone number.
+        """
         return f"<Account {self.phone}>"
 
     @contextlib.asynccontextmanager
     async def session(self, revalidate):
+        """
+        Context manager for managing the account session.
+
+        Args:
+            revalidate (bool): Whether to revalidate the session if it fails to connect.
+
+        Yields:
+            None: Control is yielded while the session is active.
+        """
         try:
             await self.start(revalidate)
             yield
@@ -228,6 +253,12 @@ class Account:
         await self.save_session_string()
 
     async def stop(self):
+        """
+        Stop the account session.
+
+        Saves the session string and disconnects the Telegram client if connected.
+        Marks the account as not started.
+        """
         if not self.started:
             return
 
@@ -241,6 +272,12 @@ class Account:
         logger.info("Account stopped for %s", self.phone)
 
     async def save_session_string(self):
+        """
+        Save the session string to a file.
+
+        Serializes the current session state and saves it to the session file
+        for persistence across application restarts.
+        """
         # Save StringSession representation
         session_str = self.app.session.save()
 

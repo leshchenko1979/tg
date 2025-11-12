@@ -4,10 +4,28 @@ from typing import Protocol
 
 
 def ensure_ats(strs: set[str]) -> set[str]:
+    """
+    Ensure all strings in a set have the @ prefix.
+
+    Args:
+        strs (set[str]): Set of strings to normalize.
+
+    Returns:
+        set[str]: Set of strings with @ prefix ensured.
+    """
     return {ensure_at_single(s) for s in strs}
 
 
 def ensure_at_single(s: str) -> str:
+    """
+    Ensure a single string has the @ prefix and is lowercase.
+
+    Args:
+        s (str): String to normalize.
+
+    Returns:
+        str: Normalized string with @ prefix and lowercase.
+    """
     return (
         s
         if not isinstance(s, str)
@@ -16,6 +34,17 @@ def ensure_at_single(s: str) -> str:
 
 
 def get_nicknames(text: str) -> set[str]:
+    """
+    Extract Telegram usernames/nicknames from text.
+
+    Finds @mentions and t.me links in text and normalizes them.
+
+    Args:
+        text (str): Text to extract usernames from.
+
+    Returns:
+        set[str]: Set of normalized usernames with @ prefix.
+    """
     if not text:
         return set()
 
@@ -28,6 +57,21 @@ def get_nicknames(text: str) -> set[str]:
 
 
 def parse_telegram_message_url(url: str) -> (str, int):
+    """
+    Parse a Telegram message URL and extract chat ID and message ID.
+
+    Supports various Telegram URL formats including direct links and discussion threads.
+
+    Args:
+        url (str): Telegram message URL (t.me/... or https://t.me/...).
+
+    Returns:
+        tuple: (chat_id, message_id) where chat_id is the username/channel identifier
+               and message_id is the integer message ID.
+
+    Raises:
+        AssertionError: If URL format is invalid or message ID is not positive.
+    """
     # Vaild format:
     # t.me/<username>/<thread_id>/<id>
     # t.me/<username>/<id>

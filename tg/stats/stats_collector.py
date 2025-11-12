@@ -21,6 +21,33 @@ Channel = namedtuple("Channel", "username subscribers")
 
 
 class StatsCollector:
+    """
+    Collects and analyzes statistics from Telegram channels and messages.
+
+    This class handles the collection of message statistics (views, likes, replies, forwards)
+    and channel statistics (subscriber counts) from Telegram channels. It can process
+    channels sequentially (with progress bar) or in parallel.
+
+    Args:
+        scanner (Scanner): Scanner instance for accessing Telegram data.
+        min_date (datetime.datetime, optional): Minimum date for collecting messages.
+        depth (int, optional): Number of days to look back from now. Cannot be used with min_date.
+
+    Attributes:
+        scanner (Scanner): The scanner instance used for data collection.
+        min_date (datetime.datetime): The minimum date for message collection.
+        msgs_df (pd.DataFrame): DataFrame containing message statistics.
+        channels_df (pd.DataFrame): DataFrame containing channel statistics.
+        stats (pd.DataFrame): Combined statistics DataFrame.
+
+    Methods:
+        collect_all_stats: Main method to collect all statistics for given channels.
+        collect_msg_stats: Collect message-level statistics for a channel.
+        collect_channel_stats: Collect channel-level statistics.
+        calc_msg_popularity: Calculate message popularity metrics.
+        collect_and_save: Collect statistics and save to database.
+    """
+
     scanner: Scanner
 
     @require(lambda min_date: isinstance(min_date, dt.datetime) or min_date is None)
@@ -35,6 +62,16 @@ class StatsCollector:
             ).replace(tzinfo=None)
 
     async def collect_all_stats(self, channels, pbar=None):
+        """
+        Collect statistics for all specified channels.
+
+        This is the main method for collecting both message and channel statistics.
+        Uses sequential scanning when progress bar is provided, parallel scanning otherwise.
+
+        Args:
+            channels (list): List of channel usernames to collect statistics for.
+            pbar: Optional progress bar for sequential scanning.
+        """
         async with self.scanner.session(pbar):
             if pbar:
                 msg_stats, channel_stats = await self.sequential_scan(channels, pbar)
@@ -68,6 +105,17 @@ class StatsCollector:
         self.collect_stats_to_single_df()
 
     async def sequential_scan(self, channels, pbar):
+        """
+        Scan channels sequentially with progress bar updates.
+
+        Args:
+            channels (list): List of channel usernames to scan.
+            pbar: Progress bar object to update.
+
+        Returns:
+            tuple: (msg_stats, channel_stats) where msg_stats is a list of message statistics
+                   and channel_stats is a list of channel statistics.
+        """
         msg_stats = []
         channel_stats = []
 
@@ -83,6 +131,16 @@ class StatsCollector:
         return msg_stats, channel_stats
 
     async def parallel_scan(self, channels):
+        """
+        Scan channels in parallel for faster processing.
+
+        Args:
+            channels (list): List of channel usernames to scan.
+
+        Returns:
+            tuple: (msg_stats, channel_stats) where msg_stats is an iterable of message statistics
+                   and channel_stats is a list of channel statistics.
+        """
         async def collect_list(channel):
             return [msg async for msg in self.collect_msg_stats(channel)]
 
@@ -96,6 +154,18 @@ class StatsCollector:
         return msg_stats, channel_stats
 
     async def collect_msg_stats(self, channel) -> AsyncIterator[Msg]:
+        """
+        Collect message-level statistics for a specific channel.
+
+        Gathers views, likes, forwards, and reply counts for each message
+        in the channel since the minimum date.
+
+        Args:
+            channel (str): Channel username to collect statistics for.
+
+        Yields:
+            Msg: Named tuple containing message statistics.
+        """
         logger.info(f"Starting to collect message stats for channel: {channel}")
         msgs_dict = {}
         message_count = 0
@@ -181,17 +251,38 @@ class StatsCollector:
         )
 
     async def collect_channel_stats(self, channel) -> Channel:
+        """
+        Collect channel-level statistics for a specific channel.
+
+        Args:
+            channel (str): Channel username to collect statistics for.
+
+        Returns:
+            Channel: Named tuple containing channel username and subscriber count.
+        """
         # Telethon chat members count
         members_count = await self.scanner.get_chat_members_count(channel)
 
         return Channel(username=channel, subscribers=members_count)
 
     def calc_msg_popularity(self):
+        """
+        Calculate message popularity metric.
+
+        Popularity is calculated as (likes + replies + forwards) / views.
+        This gives a normalized measure of engagement per view.
+        """
         self.msgs_df["popularity"] = (
             self.msgs_df.likes + self.msgs_df.replies + self.msgs_df.forwards
         ) / self.msgs_df.reach
 
     def collect_stats_to_single_df(self):
+        """
+        Combine message and channel statistics into a single DataFrame.
+
+        Merges channel subscriber data with average message reach per channel
+        to create a comprehensive statistics DataFrame.
+        """
         # Check if msgs_df is valid and contains 'username'
         if (
             getattr(self, "msgs_df", None) is not None
@@ -216,6 +307,13 @@ class StatsCollector:
         assert not self.stats.isna().any().any(), "self.stats contains NaN values"
 
     async def collect_and_save(self, stats_db: StatsDatabase, pbar=None):
+        """
+        Collect statistics and save them to the database.
+
+        Args:
+            stats_db (StatsDatabase): Database instance to save statistics to.
+            pbar: Optional progress bar for collection process.
+        """
         await self.collect_all_stats(stats_db.channels, pbar)
         stats_db.save_new_stats_to_db(self.stats)
         stats_db.save_msgs(self.msgs_df)

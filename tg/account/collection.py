@@ -44,8 +44,23 @@ class AccountCollection:
 
     @icontract.require(lambda invalid: invalid in ["ignore", "raise", "revalidate"])
     def __init__(
-        self, accounts: dict[str, Account], fs: AbstractFileSystemProtocol, invalid: str, api_id=None, api_hash=None
+        self,
+        accounts: dict[str, Account],
+        fs: AbstractFileSystemProtocol,
+        invalid: str,
+        api_id=None,
+        api_hash=None,
     ):
+        """
+        Initialize the AccountCollection.
+
+        Args:
+            accounts (dict[str, Account]): Dictionary mapping phone numbers to Account objects.
+            fs: File system object for session management.
+            invalid (str): Behavior during session start-up. Can be "ignore", "raise", or "revalidate".
+            api_id (int, optional): Telegram API ID. If not provided, will be loaded from API_ID environment variable.
+            api_hash (str, optional): Telegram API hash. If not provided, will be loaded from API_HASH environment variable.
+        """
         self.accounts = accounts
         self.fs = fs
         self.invalid = invalid
@@ -55,6 +70,15 @@ class AccountCollection:
         self.pbar = None
 
     def __getitem__(self, item):
+        """
+        Get an account by phone number.
+
+        Args:
+            item (str): Phone number of the account to retrieve.
+
+        Returns:
+            Account: The account object associated with the phone number.
+        """
         return self.accounts[item]
 
     def __contains__(self, key):
@@ -136,6 +160,11 @@ class AccountCollection:
         self.setup_available_queue()
 
     async def close_sessions(self):
+        """
+        Close all active account sessions.
+
+        Stops all started accounts and resets the available accounts queue.
+        """
         await asyncio.gather(
             *[acc.stop() for acc in self.accounts.values() if acc.started]
         )

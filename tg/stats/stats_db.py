@@ -60,6 +60,12 @@ class StatsDatabase:
         self.stats_df["created_at"] = to_msk(self.stats_df["created_at"])
 
     def load_msgs_dataframe(self):
+        """
+        Load messages dataframe from the database.
+
+        Retrieves all message data ordered by datetime (newest first).
+        Converts datetime to Moscow timezone.
+        """
         self.msgs_df = pd.DataFrame(
             self.client.table(self.msgs_table)
             .select("*")
@@ -73,7 +79,12 @@ class StatsDatabase:
         self.msgs_df["datetime"] = to_msk(self.msgs_df["datetime"])
 
     def calc_last_stats_dataframe(self):
-        """Calculates the last statictics dataframe from the database."""
+        """
+        Calculate the most recent statistics dataframe.
+
+        Finds the latest statistics update and extracts the corresponding data.
+        Sets max_datetime and last_stats_df attributes.
+        """
         self.max_datetime = (
             dt.datetime(1980, 1, 1)
             if self.stats_df.empty
@@ -84,19 +95,39 @@ class StatsDatabase:
         ].copy()
 
     def calc_timedelta_since_last_stats_update(self):
-        """Calculates the timedelta since the last statictics update."""
+        """
+        Calculate time elapsed since the last statistics update.
+
+        Sets the delta attribute to the time difference from now to the last update.
+        Uses 365 days as default if no statistics exist.
+        """
         if self.stats_df.empty:
             self.delta = dt.timedelta(days=365)
         else:
             self.delta = dt.datetime.now(dt.timezone.utc) - self.max_datetime
 
     def save_new_stats_to_db(self, stats_df: pd.DataFrame):
-        """Saves the new statictics dataframe to the database."""
+        """
+        Save new statistics to the database.
+
+        Inserts channel statistics (username, reach, subscribers) into the stats table.
+
+        Args:
+            stats_df (pd.DataFrame): DataFrame containing statistics to save.
+        """
         data = stats_df[["username", "reach", "subscribers"]].to_dict("records")
         self.client.table(self.stats_table).insert(data).execute()
 
     def save_msgs(self, msgs_df: pd.DataFrame):
-        """Updates recent messages and their stats in the messages table."""
+        """
+        Save message data to the database.
+
+        Replaces all existing message data with the provided DataFrame.
+        Converts datetime objects to strings for database storage.
+
+        Args:
+            msgs_df (pd.DataFrame): DataFrame containing message data to save.
+        """
 
         # convert datetime to str so it can be saved to postgres
         datetime_old = msgs_df["datetime"]
