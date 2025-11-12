@@ -27,6 +27,8 @@ class AccountCollection:
             - "ignore": Ignore any exceptions and continue.
             - "raise": Raise AccountStartFailed if an exception occurs.
             - "revalidate": Revalidate the session if an exception occurs.
+        api_id (int, optional): Telegram API ID. If not provided, will be loaded from API_ID environment variable.
+        api_hash (str, optional): Telegram API hash. If not provided, will be loaded from API_HASH environment variable.
 
     Examples:
         >>> collection = AccountCollection(accounts, fs, invalid)
@@ -37,14 +39,18 @@ class AccountCollection:
     accounts: dict[str, Account]
     available_accs: asyncio.Queue
     pbar: Optional[TQDMProtocol]
+    api_id: int
+    api_hash: str
 
     @icontract.require(lambda invalid: invalid in ["ignore", "raise", "revalidate"])
     def __init__(
-        self, accounts: dict[str, Account], fs: AbstractFileSystemProtocol, invalid: str
+        self, accounts: dict[str, Account], fs: AbstractFileSystemProtocol, invalid: str, api_id=None, api_hash=None
     ):
         self.accounts = accounts
         self.fs = fs
         self.invalid = invalid
+        self.api_id = api_id
+        self.api_hash = api_hash
         self.available_accs = asyncio.Queue()
         self.pbar = None
 

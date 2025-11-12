@@ -32,12 +32,16 @@ class Account:
         fs: File system object.
         phone (str): Phone number associated with the account.
         filename (str): Name of the session file.
+        api_id (int, optional): Telegram API ID. If not provided, will be loaded from API_ID environment variable.
+        api_hash (str, optional): Telegram API hash. If not provided, will be loaded from API_HASH environment variable.
 
     Attributes:
         app (telethon.client.telegramclient.TelegramClient): Telethon client object.
         fs (fsspec.spec.AbstractFileSystem): File system object.
         phone (str): Phone number associated with the account.
         filename (str): Name of the session file.
+        api_id (int): Telegram API ID.
+        api_hash (str): Telegram API hash.
         started (bool): Indicates if the account has been started.
         flood_wait_timeout (int): Timeout for flood wait.
         flood_wait_from (datetime.datetime): Start time of flood wait.
@@ -56,19 +60,39 @@ class Account:
     fs: AbstractFileSystemProtocol
     phone: str
     filename: str
+    api_id: int
+    api_hash: str
 
     started: bool
     flood_wait_timeout: int
     flood_wait_from: dt.datetime
 
-    def __init__(self, /, fs: AbstractFileSystemProtocol, phone=None, filename=None):
+    def __init__(
+        self,
+        /,
+        fs: AbstractFileSystemProtocol,
+        phone=None,
+        filename=None,
+        api_id=None,
+        api_hash=None,
+    ):
         self.filename = filename or f"{phone}.session"
         self.fs = fs
         self.phone = phone
+        self.api_id = api_id
+        self.api_hash = api_hash
         self.started = False
         self.flood_wait_timeout = 0
         self.flood_wait_from = None
         self.app = None
+
+    def _get_api_credentials(self):
+        """Get API credentials from instance attributes or environment variables."""
+        api_id = self.api_id if self.api_id is not None else int(os.environ["API_ID"])
+        api_hash = (
+            self.api_hash if self.api_hash is not None else os.environ["API_HASH"]
+        )
+        return api_id, api_hash
 
     def __repr__(self) -> str:
         return f"<Account {self.phone}>"
@@ -136,11 +160,8 @@ class Account:
                 else:
                     raise
 
-            self.app = TelegramClient(
-                session,
-                int(os.environ["API_ID"]),
-                os.environ["API_HASH"],
-            )
+            api_id, api_hash = self._get_api_credentials()
+            self.app = TelegramClient(session, api_id, api_hash)
 
             await self.app.connect()
             logger.debug(
@@ -183,9 +204,8 @@ class Account:
             >>> await setup_new_session(code_retrieval_func, password_retrieval_func)
         """
         logger.info("Setting up new session for %s", self.phone)
-        self.app = TelegramClient(
-            StringSession(), int(os.environ["API_ID"]), os.environ["API_HASH"]
-        )
+        api_id, api_hash = self._get_api_credentials()
+        self.app = TelegramClient(StringSession(), api_id, api_hash)
 
         await self.app.connect()
         logger.debug("Connected during setup_new_session for %s", self.phone)

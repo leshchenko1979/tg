@@ -3,9 +3,10 @@ from unittest.mock import AsyncMock, MagicMock
 from tg.account import AccountCollection
 from tg.account import AccountStartFailed
 
-# Assuming Account is a class with start and stop methods
-class Account:
-    def __init__(self, started=False, raises: Exception = None):
+# Test Account mock class
+class MockAccount:
+    def __init__(self, phone="test_phone", started=False, raises: Exception = None):
+        self.phone = phone
         self.started = started
         self.raises = raises
 
@@ -29,8 +30,8 @@ def mock_fs():
 @pytest.fixture
 def account_dict():
     return {
-        "account1": Account(raises = AccountStartFailed),
-        "account2": Account(),
+        "account1": MockAccount(phone="account1", raises=AccountStartFailed("account1")),
+        "account2": MockAccount(phone="account2"),
     }
 
 @pytest.mark.asyncio
